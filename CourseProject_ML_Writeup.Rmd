@@ -1,0 +1,78 @@
+---
+title: "Writeup for submission of Course Project"
+author: "VG"
+date: "Sunday, April 26, 2015"
+output: html_document
+---
+
+## Load and examine the training data
+
+* There are 159 predictors and 19,622 observations in the test data provided. 
+* Some of the predictor variables are factor variables. Therefore, need to make sure that the factor variables have the same levels in the training and testing datasets.
+* Only 406 rows of the 19,622 rows have complete observations. Therefore, cannot afford to lose as much data and only keep the 406 observations with complete data on all variables.
+* Let's plot the Classe variable to examine its distribution in the training data:
+
+```{r, echo=FALSE}
+counts <- table(train_orig$classe)
+barplot(counts, xlab="Classe type", main="Barplot of Classe variable in Training set")
+```
+
+
+
+## Load and examine the test data
+
+* There are 20 observations for testing.
+* The predictor variables are the same. 
+* There are factor variables.
+* 100 of the predictor variables in the test set have all missing values, i.e., these variables have no predictive power. Therefore, we will exclude these variables from the training set in order to speed up the model. The number of predictors to be used goes down to 59.
+
+
+
+## Partition the training data 
+
+* Partition the training data into a _train_ and _test_ sets --- we will train the model on the _train_ set and test it on the _test_ set.
+* We will use the _createDataPartition_ command from the CARET package, which ensures a stratified sample with representative levels of response variable (a factor). 
+* 75% of the training data will be assigned to the _train_ set and the remainder to the _test_ set.
+* We will use a Random Forest model (which as shown below performs very well) using the Random Forest package (which is much faster than the CARET package). 
+* Per [link] (http://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm#ooberr): "In random forests, there is no need for cross-validation or a separate test set to get an unbiased estimate of the test set error." Therefore, we will not set aside a cross validation set. 
+
+
+## Peform a Non-Zero Variance check on the _train_ data.
+* Variable new_window is identified as near-zero variance predictor. It is a factor variables with two levels - yes and no. Indeed, of the 19,266 observations only 406 have value no for this variable.
+* We remove variable new_window from the training set. The number of predictors to be used goes down to 58.
+
+
+## Run exploratory Random Forest model
+
+* We will use the default number of trees in the Random Forest package plus 1 to avoid ties (ntree=501)
+
+```{r}
+#library(randomForest)
+#modelFitRFexpl <- randomForest(classe ~ ., data = train, ntree=501, na.rm=TRUE)
+#print(modelFitRFexpl)
+#print(order(importance(modelFitRFexpl, type=2), decreasing=TRUE))
+```
+
+* The OOB estimate of the error rate is 0%, which suggests overfitting.
+* When looking at the order of variable importance, we can see that the following variables are at the top of the list and they seem to be unique identifiers of each row and hence, each response variable:
++ "X" 
++ "cvtd_timestamp"       
++ "raw_timestamp_part_1" 
++ "roll_belt"      
+* We remove the first three of these predictors from the training data to avoid overfitting.
+
+## Refit the Random Forest model excluding the three predictors above
+
+* The OOB estimate of the error rate is now 0.46%, i.e., the expected number of misclassified observations on a test set of 4904 observations is approximately 23 misclassified cases. 
+
+## Test the model using the _test_ data set aside by the partition command
+
+```{r}
+#pred.FitRF <- predict(modelFitRF, test[ ,-c(60)], type="response")
+#table(observed = test$classe, predicted = pred.FitRF)
+```
+
+* There are 22 misclassified cases out of 4904 observations, which closely mirrors the OOB estimate of the error rate (the latter is shown to be unbiased in a lot of situations).
+
+## The model above achieved 100% accuracy when run against the sample data points in Part 2 of the assignment.
+
