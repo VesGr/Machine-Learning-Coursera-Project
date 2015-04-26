@@ -1,0 +1,135 @@
+---
+title: "Writeup for submission of Course Project"
+author: "VG"
+date: "Sunday, April 26, 2015"
+output: html_document
+---
+
+## Load and examine the training data
+
+```{r, echo=FALSE}
+library(caret)
+library(randomForest)
+set.seed(1234)
+train_orig <- read.csv("pml-training.csv")
+#names(train_orig)
+#dim(train_orig)
+#sapply(train_orig, class)
+#nrow(train_orig)
+#sum(complete.cases(train_orig))
+#sum(is.na(train_orig$classe)) 
+```
+
+* There are 159 predictors and 19,622 observations in the test data provided. 
+* Some of the predictor variables are factor variables. Therefore, need to make sure that the factor variables have the same levels in the training and testing datasets.
+* Only 406 rows of the 19,622 rows have complete observations. Therefore, cannot afford to lose as much data and only keep the 406 observations with complete data on all variables.
+* All of the observations have data for the classe variable.
+
+* Let's plot the Classe variable to examine its distribution in the training data:
+
+```{r, echo=FALSE}
+counts <- table(train_orig$classe)
+barplot(counts, xlab="Classe type", main="Barplot of Classe variable in Training set")
+```
+
+
+
+## Load and examine the test data
+
+```{r, echo=FALSE}
+test_orig <- read.csv("pml-testing.csv")
+#names(test_orig)
+#dim(test_orig)
+#sapply(test_orig, class)
+sum(complete.cases(test_orig))                 
+na_summary_test <- sapply(test_orig, is.na)
+na_summary_test <- colSums(na_summary_test)
+NAvars <- na_summary_test[na_summary_test==20]     # Note that where colSum is 20, all values are NA
+train_orig_subset <- train_orig[ , !names(train_orig) %in% names(NAvars)] 
+```
+
+* There are 20 observations for testing.
+* The predictor variables are the same as in the training data.
+* There are factor variables.
+* 100 of the predictor variables in the test set have all missing values, i.e., these variables have no predictive power. Therefore, we will exclude these variables from the training set in order to speed up the model. The number of predictors to be used goes down to 59.
+
+
+## Partition the training data 
+
+```{r, echo=FALSE}
+inTrain <- createDataPartition(y=train_orig_subset$classe, p=0.75, list=FALSE)
+train <- train_orig_subset[inTrain, ]
+test <- train_orig_subset[-inTrain, ]
+dim(train)
+dim(test)
+```
+
+
+* Partition the training data into _train_ and _test_ sets --- we will train the model on the _train_ set and test it on the _test_ set.
+* We will use the _createDataPartition_ command from the CARET package, which ensures a stratified sample with representative levels of response variable (a factor). 
+* 75% of the training data will be assigned to the _train_ set and the remainder to the _test_ set.
+* We will use a Random Forest model (which as shown below performs very well) using the Random Forest package (which is much faster than the CARET package). 
+* Per one of the references provided during the course (http://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm#ooberr): "In random forests, there is no need for cross-validation or a separate test set to get an unbiased estimate of the test set error." Therefore, we will not set aside a cross validation set. 
+
+
+## Peform a Non-Zero Variance check on the _train_ data.
+
+```{r, echo=FALSE}
+nz_var <- nearZeroVar(train, saveMetrics=TRUE)
+colSums(nz_var)                      # There is 1 predictor with near-zero variance: new_window
+nz_var <- subset(nz_var, nz_var[ ,4]==TRUE)
+nz_var
+train <- train[ , -6]
+```
+
+* Variable new_window is identified as near-zero variance predictor. It is a factor variables with two levels - yes and no. Indeed, of the 19,266 observations only 406 have value no for this variable.
+* We remove variable new_window from the training set. The number of predictors to be used goes down to 58.
+
+
+## Run exploratory Random Forest model
+
+* We will use the default number of trees in the Random Forest package (500) plus 1 to avoid ties (ntree=501)
+
+```{r}
+modelFitRFexpl <- randomForest(classe ~ ., data = train, ntree=501, na.rm=TRUE)
+print(modelFitRFexpl)
+print(order(importance(modelFitRFexpl, type=2), decreasing=TRUE))
+```
+
+* The OOB estimate of the error rate is 0%, which suggests overfitting.
+* When looking at the order of variable importance, we can see that the following variables are at the top of the list and they seem to be unique identifiers of each row and hence, each response variable: "X", "cvtd_timestamp", "raw_timestamp_part_1", "roll_belt"      
+* We remove the first three of these predictors from the training data to avoid overfitting.
+
+## Re-fit the Random Forest model excluding the three predictors above and also excluding the new_window variable identified to have near-zero variance.
+
+```{r}
+modelFitRF <- randomForest(classe ~ ., data = train[ ,-c(1, 3, 5, 6)], ntree=501, na.rm=TRUE)
+print(modelFitRF)
+print(order(importance(modelFitRF, type=2)))
+```
+
+* The OOB estimate of the error rate is now 0.47%, i.e., the expected number of misclassified observations on a test set of 4904 observations is approximately 23 misclassified cases. 
+
+## Test the model using the _test_ data 
+
+```{r}
+pred.FitRF <- predict(modelFitRF, test[ ,-c(60)], type="response")
+table(observed = test$classe, predicted = pred.FitRF)
+```
+
+* There are 22 misclassified cases out of 4904 observations, which closely mirrors the OOB estimate of the error rate (the latter is shown to be unbiased in a lot of situations).
+
+## Create predictions for the 20 sample test cases
+
+```{r}
+vars.train <- names(train)
+vars.test <- names(test_orig)
+test_final <- test_orig[ ,names(test_orig) %in% vars.train]
+levels(test_final$cvtd_timestamp) <- levels(train$cvtd_timestamp)
+pred.FitRF2 <- predict(modelFitRF, test_final)
+print(pred.FitRF2)
+```
+
+* First, ensure that the test cases only keep the variables used in the training set and then ensure that the factor variables across the two sets use the same levels.
+* The re-fit model above achieved 100% accuracy when run against the 20 sample test cases in Part 2 of the assignment.
+
